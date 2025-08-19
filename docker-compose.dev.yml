@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  db:
+    extends:
+      file: docker-compose.yml
+      service: db
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: pms_backend_dev
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-pms_user}:${POSTGRES_PASSWORD:-pms_password}@db:5432/${POSTGRES_DB:-pms_db}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - DEBUG=True
+    volumes:
+      - ./backend:/app/backend
+      - /app/backend/__pycache__
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "
+      alembic upgrade head &&
+      uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: pms_frontend_dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - CHOKIDAR_USEPOLLING=true
+      - WDS_SOCKET_PORT=0
+    depends_on:
+      - backend
+    networks:
+      - pms-network
+
+  # Uncomment if you want to add pgAdmin
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: pgadmin
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@example.com
+  #     PGADMIN_DEFAULT_PASSWORD: admin
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - db
